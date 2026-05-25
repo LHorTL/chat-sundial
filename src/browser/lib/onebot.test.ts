@@ -1,22 +1,119 @@
 import { describe, expect, it } from "vitest";
 import {
   buildOneBotActionRequest,
+  buildOneBotWebSocketActionPayload,
+  buildOneBotWebSocketUrl,
   buildSendMessageAction,
   isCountdownDue,
   matchMonitorEvent,
   normalizeOneBotConfig,
+  normalizeOneBotLocalPort,
   parseOneBotGroupList
 } from "./onebot";
 
 describe("onebot helpers", () => {
   it("builds HTTP action requests with normalized base URL and bearer token", () => {
     const config = normalizeOneBotConfig({
-      httpUrl: "http://127.0.0.1:5700/",
+      mode: "remote",
+      httpUrl: "https://api.example.com/napcat/botApi/",
       accessToken: "secret"
     });
 
-    expect(buildOneBotActionRequest(config, "get_status", {}).url).toBe("http://127.0.0.1:5700/get_status");
+    expect(buildOneBotActionRequest(config, "get_status", {}).url).toBe("https://api.example.com/napcat/botApi/get_status");
     expect(buildOneBotActionRequest(config, "get_status", {}).headers.Authorization).toBe("Bearer secret");
+  });
+
+  it("builds local mode endpoints from port and token", () => {
+    const config = normalizeOneBotConfig({
+      mode: "local",
+      localPort: "3001",
+      accessToken: " secret "
+    });
+
+    expect(config).toMatchObject({
+      mode: "local",
+      protocol: "http",
+      localPort: "3001",
+      remoteBaseUrl: "",
+      httpUrl: "http://127.0.0.1:3001",
+      wsUrl: "ws://127.0.0.1:3001",
+      accessToken: "secret"
+    });
+    expect(buildOneBotActionRequest(config, "get_status", {}).url).toBe("http://127.0.0.1:3001/get_status");
+  });
+
+  it("keeps local websocket protocol and builds authorized websocket URL", () => {
+    const config = normalizeOneBotConfig({
+      mode: "local",
+      protocol: "websocket",
+      localPort: "3212",
+      accessToken: "secret"
+    });
+
+    expect(config).toMatchObject({
+      mode: "local",
+      protocol: "websocket",
+      httpUrl: "http://127.0.0.1:3212",
+      wsUrl: "ws://127.0.0.1:3212"
+    });
+    expect(buildOneBotWebSocketUrl(config)).toBe("ws://127.0.0.1:3212/?access_token=secret");
+  });
+
+  it("builds remote endpoints from one address", () => {
+    const config = normalizeOneBotConfig({
+      mode: "remote",
+      remoteBaseUrl: "https://api.example.com/napcat/",
+      accessToken: " secret "
+    });
+
+    expect(config).toMatchObject({
+      mode: "remote",
+      protocol: "http",
+      remoteBaseUrl: "https://api.example.com/napcat",
+      httpUrl: "https://api.example.com/napcat/botApi",
+      wsUrl: "wss://api.example.com/napcat/websocket",
+      accessToken: "secret"
+    });
+    expect(buildOneBotActionRequest(config, "get_status", {}).url).toBe("https://api.example.com/napcat/botApi/get_status");
+  });
+
+  it("accepts remote websocket address as the single remote input", () => {
+    const config = normalizeOneBotConfig({
+      mode: "remote",
+      protocol: "websocket",
+      remoteBaseUrl: "wss://api.example.com/napcat/websocket/"
+    });
+
+    expect(config.protocol).toBe("websocket");
+    expect(config.remoteBaseUrl).toBe("https://api.example.com/napcat");
+    expect(config.httpUrl).toBe("https://api.example.com/napcat/botApi");
+    expect(config.wsUrl).toBe("wss://api.example.com/napcat/websocket");
+  });
+
+  it("builds websocket action payloads with echo", () => {
+    expect(buildOneBotWebSocketActionPayload("get_status", {}, "echo-1")).toEqual({
+      action: "get_status",
+      params: {},
+      echo: "echo-1"
+    });
+  });
+
+  it("detects old saved remote configs and keeps their URLs", () => {
+    const config = normalizeOneBotConfig({
+      httpUrl: "https://api.example.com/napcat/botApi/",
+      wsUrl: "wss://api.example.com/napcat/websocket/"
+    });
+
+    expect(config.mode).toBe("remote");
+    expect(config.remoteBaseUrl).toBe("https://api.example.com/napcat");
+    expect(config.httpUrl).toBe("https://api.example.com/napcat/botApi");
+    expect(config.wsUrl).toBe("wss://api.example.com/napcat/websocket");
+  });
+
+  it("normalizes local port values", () => {
+    expect(normalizeOneBotLocalPort(" 5701 ")).toBe("5701");
+    expect(normalizeOneBotLocalPort("0")).toBe("5700");
+    expect(normalizeOneBotLocalPort("70000")).toBe("5700");
   });
 
   it("maps group and private recipients to OneBot send actions", () => {

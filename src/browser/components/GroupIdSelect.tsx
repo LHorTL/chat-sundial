@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState, type SyntheticEvent } from "react";
 import { Select } from "@fangxinyan/lumina";
 import type { SelectOption } from "@fangxinyan/lumina";
 import type { OneBotGroupInfo } from "../lib/onebot";
@@ -24,6 +24,8 @@ export function GroupIdSelect({
   error = "",
   placeholder = "搜索群名或群号"
 }: GroupIdSelectProps) {
+  const [open, setOpen] = useState(false);
+  const suppressOpenUntilRef = useRef(0);
   const options = useMemo(
     () =>
       groups.map((group) => ({
@@ -34,10 +36,41 @@ export function GroupIdSelect({
     [groups]
   ) satisfies GroupSelectOption[];
 
+  const keepClearClickOnButton = (event: SyntheticEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest(".select-clear")) {
+      return;
+    }
+
+    suppressOpenUntilRef.current = window.performance.now() + 200;
+    event.stopPropagation();
+  };
+
+  const handleClear = () => {
+    suppressOpenUntilRef.current = window.performance.now() + 200;
+    setOpen(false);
+    onChange("");
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && window.performance.now() < suppressOpenUntilRef.current) {
+      setOpen(false);
+      return;
+    }
+
+    setOpen(nextOpen);
+  };
+
   return (
     <Select
+      key={value || "empty"}
       value={value || undefined}
       onChange={(nextValue) => onChange(String(nextValue ?? ""))}
+      open={open}
+      onOpenChange={handleOpenChange}
+      onClear={handleClear}
+      onPointerDownCapture={keepClearClickOnButton}
+      onMouseDownCapture={keepClearClickOnButton}
       options={options}
       allowClear
       showSearch

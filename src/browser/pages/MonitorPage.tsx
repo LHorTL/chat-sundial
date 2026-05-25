@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Button, Card, Input, Select, Switch, Tag, Textarea, Typography } from "@fangxinyan/lumina";
 import { GroupIdSelect } from "../components/GroupIdSelect";
-import type { MonitorRule, MonitorTrigger, OneBotGroupInfo, RecipientType } from "../lib/onebot";
+import type { MonitorRule, MonitorRunMode, MonitorTrigger, OneBotGroupInfo, RecipientType } from "../lib/onebot";
 
 interface MonitorPageProps {
   rules: MonitorRule[];
@@ -27,6 +27,7 @@ export function MonitorPage({
   const [name, setName] = useState("群状态提醒");
   const [sourceGroupId, setSourceGroupId] = useState("");
   const [trigger, setTrigger] = useState<MonitorTrigger>("regex");
+  const [runMode, setRunMode] = useState<MonitorRunMode>("repeat");
   const [pattern, setPattern] = useState("");
   const [recipientType, setRecipientType] = useState<RecipientType>("group");
   const [targetId, setTargetId] = useState("");
@@ -47,6 +48,7 @@ export function MonitorPage({
       name: name.trim(),
       sourceGroupId: sourceGroupId.trim(),
       trigger,
+      runMode,
       pattern: trigger === "regex" ? pattern.trim() : undefined,
       recipientType,
       targetId: targetId.trim(),
@@ -59,14 +61,21 @@ export function MonitorPage({
     <div className="page">
       <PageHeading
         title="群状态监控"
-        description="监听 OneBot WebSocket 事件，匹配群消息正则或群禁言事件后发送指定消息。"
+        description="匹配群消息或禁言事件后自动发送消息，规则本机保存。"
       />
 
       <div className="page-grid">
         <Card
-          title="创建监控规则"
-          description="正则匹配只处理群消息；禁言开启/关闭匹配 group_ban 通知事件"
-          actions={<StatusPill status={eventStatus} />}
+          title="创建规则"
+          actions={
+            <div className="monitor-card-actions">
+              <label className="run-mode-switch">
+                <span>触发后关闭</span>
+                <Switch checked={runMode === "once"} onChange={(checked) => setRunMode(checked ? "once" : "repeat")} />
+              </label>
+              <StatusPill status={eventStatus} />
+            </div>
+          }
           bodyLayout="stack"
         >
           <div className="form-grid">
@@ -99,7 +108,7 @@ export function MonitorPage({
                 <Input value={pattern} onValueChange={setPattern} placeholder="例如 开服|开门" allowClear />
               </Field>
             )}
-            <Field label="发送对象">
+            <Field label="发送目标">
               <Select
                 value={recipientType}
                 onChange={(value) => setRecipientType(value as RecipientType)}
@@ -134,7 +143,7 @@ export function MonitorPage({
           </div>
         </Card>
 
-        <Card title="规则列表" description="关闭规则后仍保留配置，但不会响应事件" bodyLayout="stack">
+        <Card title="规则列表" description="重启后恢复；关闭后不响应事件" bodyLayout="stack">
           {rules.length === 0 ? (
             <EmptyText>暂无监控规则</EmptyText>
           ) : (
@@ -144,13 +153,17 @@ export function MonitorPage({
                   <div>
                     <div className="item-title">
                       <strong>{rule.name || "未命名规则"}</strong>
-                      <Tag tone={rule.enabled === false ? "neutral" : "success"} dot>
-                        {rule.enabled === false ? "已停用" : "启用中"}
-                      </Tag>
+                      <RuleStatusTag rule={rule} />
+                      <Tag tone="accent">{describeRunMode(rule)}</Tag>
                     </div>
-                    <Typography.Text type="secondary">
-                      来源群 {rule.sourceGroupId} · {describeTrigger(rule)}
-                    </Typography.Text>
+                    <div className="item-meta">
+                      <Typography.Text type="secondary">
+                        来源群 {rule.sourceGroupId} · {describeTrigger(rule)}
+                      </Typography.Text>
+                      <Typography.Text type="secondary">
+                        发送到 {describeRecipient(rule)} {rule.targetId} · {describeLastMatchedAt(rule.lastMatchedAt)}
+                      </Typography.Text>
+                    </div>
                   </div>
                   <div className="item-actions">
                     <Switch checked={rule.enabled !== false} onChange={(checked) => onToggleRule(rule.id, checked)} />
@@ -192,8 +205,20 @@ function EmptyText({ children }: { children: React.ReactNode }) {
 
 function StatusPill({ status }: { status: MonitorPageProps["eventStatus"] }) {
   const tone = status === "connected" ? "success" : status === "error" ? "danger" : status === "disconnected" ? "warning" : "neutral";
-  const label = status === "connected" ? "事件流已连接" : status === "error" ? "事件流错误" : status === "disconnected" ? "事件流断开" : "事件流待配置";
+  const label = status === "connected" ? "已连接" : status === "error" ? "错误" : status === "disconnected" ? "断开" : "待配置";
   return <Tag tone={tone} dot>{label}</Tag>;
+}
+
+function RuleStatusTag({ rule }: { rule: MonitorRule }) {
+  if (rule.enabled === false && rule.runMode === "once" && rule.lastMatchedAt) {
+    return <Tag tone="neutral" dot>已完成</Tag>;
+  }
+
+  if (rule.enabled === false) {
+    return <Tag tone="neutral" dot>已停用</Tag>;
+  }
+
+  return <Tag tone="success" dot>启用中</Tag>;
 }
 
 function describeTrigger(rule: MonitorRule) {
@@ -202,4 +227,25 @@ function describeTrigger(rule: MonitorRule) {
   }
 
   return rule.trigger === "mute_on" ? "群禁言开启" : "群禁言关闭";
+}
+
+function describeRunMode(rule: MonitorRule) {
+  return (rule.runMode ?? "repeat") === "once" ? "一次性" : "循环运行";
+}
+
+function describeRecipient(rule: MonitorRule) {
+  return rule.recipientType === "group" ? "群聊" : "私聊";
+}
+
+function describeLastMatchedAt(lastMatchedAt: number | undefined) {
+  if (!lastMatchedAt) {
+    return "尚未触发";
+  }
+
+  return `上次触发 ${new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(lastMatchedAt))}`;
 }

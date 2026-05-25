@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppShell,
-  Button,
   Icon,
   Sidebar,
   StatusBar,
@@ -15,6 +14,7 @@ import { ConfigPage } from "./pages/ConfigPage";
 import { CountdownPage } from "./pages/CountdownPage";
 import { MonitorPage } from "./pages/MonitorPage";
 import {
+  buildOneBotWebSocketUrl,
   DEFAULT_ONEBOT_CONFIG,
   isCountdownDue,
   matchMonitorEvent,
@@ -32,6 +32,7 @@ import { callOneBotAction, sendOneBotMessage } from "./lib/onebotClient";
 type AppPage = "countdown" | "monitor" | "config";
 
 const ONEBOT_CONFIG_STORAGE_KEY = "chat-sundial:onebot-config";
+const MONITOR_RULES_STORAGE_KEY = "chat-sundial:monitor-rules";
 
 function formatTime(date: Date) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -48,22 +49,27 @@ export default function App() {
   const [activeKey, setActiveKey] = useState<AppPage>("countdown");
   const [config, setConfig] = useState<OneBotConfig>(() => loadOneBotConfig());
   const [hasSavedConfig, setHasSavedConfig] = useState(() => Boolean(localStorage.getItem(ONEBOT_CONFIG_STORAGE_KEY)));
-  const [connectionStatus, setConnectionStatus] = useState<OneBotConnectionStatus>("idle");
+  const [connectionStatus, setConnectionStatus] = useState<OneBotConnectionStatus>(() =>
+    localStorage.getItem(ONEBOT_CONFIG_STORAGE_KEY) ? "checking" : "idle"
+  );
   const [eventStatus, setEventStatus] = useState<"idle" | "connected" | "disconnected" | "error">("idle");
   const [lastError, setLastError] = useState("");
   const [groups, setGroups] = useState<OneBotGroupInfo[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [groupsError, setGroupsError] = useState("");
   const [tasks, setTasks] = useState<CountdownTask[]>([]);
-  const [rules, setRules] = useState<MonitorRule[]>([]);
+  const [rules, setRules] = useState<MonitorRule[]>(() => loadMonitorRules());
 
   const bridge = window.chatSundial;
   const platform = bridge?.platform ?? "browser";
-  const shellPlatform = platform === "win32" ? "windows" : "mac";
+  const shellPlatform = platform === "darwin" ? "mac" : "windows";
   const configRef = useRef(config);
   const tasksRef = useRef(tasks);
   const rulesRef = useRef(rules);
   const sendingTaskIdsRef = useRef(new Set<string>());
+  const sendingRuleIdsRef = useRef(new Set<string>());
+  const connectionCheckSeqRef = useRef(0);
+  const skipNextAutoCheckRef = useRef(false);
 
   const sidebarItems = useMemo(
     () => [
@@ -84,12 +90,55 @@ export default function App() {
     configRef.current = config;
   }, [config]);
 
+  const checkConnection = useCallback(async (nextConfig: OneBotConfig) => {
+    const checkSeq = ++connectionCheckSeqRef.current;
+    setConnectionStatus("checking");
+    setLastError("");
+
+    const response = await callOneBotAction(nextConfig, "get_status", {});
+    if (checkSeq !== connectionCheckSeqRef.current) {
+      return response.ok;
+    }
+
+    if (response.ok) {
+      setConnectionStatus("connected");
+      setLastError("");
+      return true;
+    }
+
+    setConnectionStatus("error");
+    setLastError(formatOneBotActionError(response, "get_status"));
+    return false;
+  }, []);
+
+  useEffect(() => {
+    if (!hasSavedConfig) {
+      setConnectionStatus("idle");
+      return;
+    }
+
+    if (skipNextAutoCheckRef.current) {
+      skipNextAutoCheckRef.current = false;
+      return;
+    }
+
+    void checkConnection(config);
+  }, [checkConnection, config, hasSavedConfig]);
+
   useEffect(() => {
     tasksRef.current = tasks;
   }, [tasks]);
 
   useEffect(() => {
     rulesRef.current = rules;
+  }, [rules]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MONITOR_RULES_STORAGE_KEY, JSON.stringify(rules));
+    } catch {
+      // Persistence is best-effort; runtime behavior should not break if storage is unavailable.
+    }
   }, [rules]);
 
   useEffect(() => {
@@ -154,7 +203,7 @@ export default function App() {
         sendingTaskIdsRef.current.add(task.id);
         sendTarget(task)
           .then(() => {
-            setTasks((current) => current.map((item) => item.id === task.id ? { ...item, status: "sent", lastError: undefined } : item));
+            setTasks((current) => current.filter((item) => item.id !== task.id));
           })
           .catch((error) => {
             setTasks((current) =>
@@ -180,7 +229,7 @@ export default function App() {
       return;
     }
 
-    const ws = new WebSocket(buildWebSocketUrl(config));
+    const ws = new WebSocket(buildOneBotWebSocketUrl(config));
     setEventStatus("disconnected");
 
     ws.addEventListener("open", () => setEventStatus("connected"));
@@ -195,16 +244,28 @@ export default function App() {
       }
 
       rulesRef.current
-        .filter((rule) => rule.enabled !== false && matchMonitorEvent(rule, event))
+        .filter((rule) => rule.enabled !== false && !sendingRuleIdsRef.current.has(rule.id) && matchMonitorEvent(rule, event))
         .forEach((rule) => {
+          sendingRuleIdsRef.current.add(rule.id);
           sendTarget(rule)
             .then(() => {
               setRules((current) =>
-                current.map((item) => item.id === rule.id ? { ...item, lastMatchedAt: Date.now() } : item)
+                current.map((item) =>
+                  item.id === rule.id
+                    ? {
+                        ...item,
+                        enabled: (item.runMode ?? "repeat") === "once" ? false : item.enabled,
+                        lastMatchedAt: Date.now()
+                      }
+                    : item
+                )
               );
             })
             .catch((error) => {
               setLastError(error instanceof Error ? error.message : String(error));
+            })
+            .finally(() => {
+              sendingRuleIdsRef.current.delete(rule.id);
             });
         });
     });
@@ -214,28 +275,24 @@ export default function App() {
     };
   }, [config, hasSavedConfig, rules.length, sendTarget]);
 
-  const saveConfig = (nextConfig: OneBotConfig) => {
+  const persistConfig = (nextConfig: OneBotConfig) => {
     const normalized = normalizeOneBotConfig(nextConfig);
     localStorage.setItem(ONEBOT_CONFIG_STORAGE_KEY, JSON.stringify(normalized));
     setConfig(normalized);
     setHasSavedConfig(true);
+    return normalized;
+  };
+
+  const saveConfig = (nextConfig: OneBotConfig) => {
+    persistConfig(nextConfig);
+    setConnectionStatus("idle");
     setLastError("");
   };
 
   const testConnection = async (nextConfig: OneBotConfig) => {
-    const normalized = normalizeOneBotConfig(nextConfig);
-    setConnectionStatus("checking");
-    setLastError("");
-    const response = await callOneBotAction(normalized, "get_status", {});
-
-    if (response.ok) {
-      saveConfig(normalized);
-      setConnectionStatus("connected");
-      return;
-    }
-
-    setConnectionStatus("error");
-    setLastError(response.wording || response.message || `get_status 失败: ${response.retcode ?? "unknown"}`);
+    skipNextAutoCheckRef.current = true;
+    const normalized = persistConfig(nextConfig);
+    await checkConnection(normalized);
   };
 
   const activePage = useMemo(() => {
@@ -289,12 +346,6 @@ export default function App() {
           <TitleBar
             platform={shellPlatform}
             title={<Typography.Text strong>ChatSundial</Typography.Text>}
-            center={
-              <Button size="sm" variant="ghost" icon="search">
-                搜索
-              </Button>
-            }
-            actions={<Button size="sm" icon="bell" tip="通知" />}
             onClose={() => bridge?.window.close()}
             onMaximize={() => bridge?.window.maximize()}
             onMinimize={() => bridge?.window.minimize()}
@@ -338,7 +389,7 @@ export default function App() {
               OneBot {statusLabel(connectionStatus)}
             </StatusBar.Item>
           }
-          center={<StatusBar.Item tone="accent">{config.httpUrl}</StatusBar.Item>}
+          center={<StatusBar.Item tone="accent">{config.protocol === "websocket" ? config.wsUrl : config.httpUrl}</StatusBar.Item>}
           right={
             <>
               <StatusBar.Item tone="muted">事件流 {eventStatusLabel(eventStatus)}</StatusBar.Item>
@@ -360,14 +411,34 @@ function loadOneBotConfig(): OneBotConfig {
   }
 }
 
-function buildWebSocketUrl(config: OneBotConfig) {
-  if (!config.accessToken) {
-    return config.wsUrl;
+function loadMonitorRules(): MonitorRule[] {
+  try {
+    const raw = localStorage.getItem(MONITOR_RULES_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const value = JSON.parse(raw);
+    return Array.isArray(value) ? value.filter(isMonitorRuleLike).map(normalizeMonitorRule) : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeMonitorRule(rule: MonitorRule): MonitorRule {
+  return {
+    ...rule,
+    runMode: rule.runMode === "once" ? "once" : "repeat"
+  };
+}
+
+function isMonitorRuleLike(value: unknown): value is MonitorRule {
+  if (!value || typeof value !== "object") {
+    return false;
   }
 
-  const url = new URL(config.wsUrl);
-  url.searchParams.set("access_token", config.accessToken);
-  return url.toString();
+  const record = value as Partial<MonitorRule>;
+  return Boolean(record.id && record.sourceGroupId && record.trigger && record.recipientType && record.targetId && record.message);
 }
 
 function statusTone(status: OneBotConnectionStatus) {
@@ -389,4 +460,13 @@ function eventStatusLabel(status: "idle" | "connected" | "disconnected" | "error
   if (status === "error") return "错误";
   if (status === "disconnected") return "断开";
   return "未启用";
+}
+
+function formatOneBotActionError(response: { wording?: string; message?: string; retcode?: number; httpStatus?: number }, action: string) {
+  if (response.wording || response.message) {
+    return response.wording || response.message || "";
+  }
+
+  const detail = response.retcode ?? response.httpStatus ?? "unknown";
+  return `${action} 失败: ${detail}`;
 }

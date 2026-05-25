@@ -53,7 +53,7 @@ export function CountdownPage({ tasks, groups, groupsLoading, groupsError, onCre
       />
 
       <div className="page-grid">
-        <Card title="创建任务" description="任务会在当前应用运行期间执行" bodyLayout="stack">
+        <Card title="创建任务" description="发送成功后自动移除；发送失败会保留在队列中" bodyLayout="stack">
           <div className="form-grid">
             <Field label="任务名称">
               <Input value={name} onValueChange={setName} allowClear />
@@ -120,7 +120,7 @@ export function CountdownPage({ tasks, groups, groupsLoading, groupsError, onCre
           </div>
         </Card>
 
-        <Card title="任务队列" description="等待、成功和失败状态会保留在当前会话中" bodyLayout="stack">
+        <Card title="任务队列" description="等待任务会自动执行，失败任务由你手动处理" bodyLayout="stack">
           {tasks.length === 0 ? (
             <EmptyText>暂无倒计时任务</EmptyText>
           ) : (

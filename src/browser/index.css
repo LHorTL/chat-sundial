@@ -29,6 +29,11 @@ body {
   justify-content: center;
 }
 
+.titlebar-shell.windows .win-controls.windows {
+  margin-left: auto;
+  margin-right: 8px;
+}
+
 .app-shell-main {
   display: flex;
   flex-direction: column;
@@ -125,6 +130,11 @@ body {
   margin-bottom: 4px;
 }
 
+.item-meta {
+  display: grid;
+  gap: 3px;
+}
+
 .item-title strong {
   color: var(--fg);
 }
@@ -137,6 +147,20 @@ body {
   border-radius: var(--r-md);
   background: var(--bg);
   box-shadow: var(--neu-shadow-inset);
+}
+
+.monitor-card-actions,
+.run-mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.run-mode-switch {
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
 }
 
 .error-text {

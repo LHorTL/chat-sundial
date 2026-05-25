@@ -8,6 +8,13 @@
     "appId": "com.chatsundial.app",
     "productName": "ChatSundial",
     "asar": true,
+    "icon": "build/icon.ico",
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
     "directories": {
       "output": "release/${version}"
     },
