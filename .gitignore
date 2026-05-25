@@ -1,0 +1,7 @@
+node_modules
+app/main
+app/browser
+release
+dist
+*.log
+.DS_Store

@@ -1,0 +1,66 @@
+{
+  "name": "chat-sundial",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./app/main/index.cjs",
+  "build": {
+    "appId": "com.chatsundial.app",
+    "productName": "ChatSundial",
+    "asar": true,
+    "directories": {
+      "output": "release/${version}"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "artifactName": "${productName}_${version}.${ext}"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}_${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "scripts": {
+    "dev": "node script/watch.mjs",
+    "dev:vite": "vite --config src/browser/vite.config.ts",
+    "dev:electron": "electron .",
+    "prebuild": "tsc && node script/build.mjs",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "preview": "vite preview --config src/browser/vite.config.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fangxinyan/lumina": "^0.6.15",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.8",
+    "@types/react": "^18.0.27",
+    "@types/react-dom": "^18.0.10",
+    "@vitejs/plugin-react": "^3.1.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^23.6.0",
+    "sass": "^1.60.0",
+    "typescript": "^4.9.3",
+    "vite": "^4.1.0",
+    "vitest": "^4.1.7"
+  }
+}

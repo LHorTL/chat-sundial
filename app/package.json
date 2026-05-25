@@ -1,0 +1,11 @@
+{
+  "name": "chat-sundial-app",
+  "version": "0.0.0",
+  "description": "ChatSundial desktop application bundle",
+  "main": "main/index.cjs",
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {}
+}
