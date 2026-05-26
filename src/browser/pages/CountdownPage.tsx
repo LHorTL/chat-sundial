@@ -161,10 +161,10 @@ function PageHeading({ title, description }: { title: string; description: strin
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="field">
+    <div className="field">
       <span>{label}</span>
       {children}
-    </label>
+    </div>
   );
 }
 
