@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AppShell,
+  ContextMenu,
+  type ContextMenuItem,
+  Divider,
   Icon,
+  Radio,
   Sidebar,
   StatusBar,
   Tag,
@@ -10,29 +14,21 @@ import {
   TitleBar,
   Typography
 } from "@fangxinyan/lumina";
-import { ConfigPage } from "./pages/ConfigPage";
-import { CountdownPage } from "./pages/CountdownPage";
-import { MonitorPage } from "./pages/MonitorPage";
-import {
-  buildOneBotWebSocketUrl,
-  DEFAULT_ONEBOT_CONFIG,
-  isCountdownDue,
-  matchMonitorEvent,
-  normalizeOneBotConfig,
-  parseOneBotGroupList,
-  type CountdownTask,
-  type MonitorRule,
-  type OneBotConfig,
-  type OneBotConnectionStatus,
-  type OneBotEvent,
-  type OneBotGroupInfo
-} from "./lib/onebot";
-import { callOneBotAction, sendOneBotMessage } from "./lib/onebotClient";
+import { TaskCenter, type GlobalTaskRegistration } from "./components/TaskCenter";
+import { buildDocumentTaskRegistration, loadDocumentTasks, type DocumentSubmitTask } from "./sections/docs/lib/documentTaskRegistration";
+import { DocumentSubmitPage, type DocumentTaskAction, type DocumentTaskActionRequest } from "./sections/docs/pages/DocumentSubmitPage";
+import { useQQSection, type QQPage } from "./sections/qq/QQSection";
 
-type AppPage = "countdown" | "monitor" | "config";
+type AppSection = "qq" | "docs";
+type AppPage = QQPage | "docs";
+interface DocumentSidebarTask {
+  id: string;
+  name: string;
+  status: DocumentSubmitTask["status"];
+  statusLabel: string;
+}
 
-const ONEBOT_CONFIG_STORAGE_KEY = "chat-sundial:onebot-config";
-const MONITOR_RULES_STORAGE_KEY = "chat-sundial:monitor-rules";
+const ACTIVE_SECTION_STORAGE_KEY = "chat-sundial:active-section";
 
 function formatTime(date: Date) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -46,38 +42,48 @@ function formatTime(date: Date) {
 export default function App() {
   const [now, setNow] = useState(() => new Date());
   const [version, setVersion] = useState("0.0.0");
-  const [activeKey, setActiveKey] = useState<AppPage>("countdown");
-  const [config, setConfig] = useState<OneBotConfig>(() => loadOneBotConfig());
-  const [hasSavedConfig, setHasSavedConfig] = useState(() => Boolean(localStorage.getItem(ONEBOT_CONFIG_STORAGE_KEY)));
-  const [connectionStatus, setConnectionStatus] = useState<OneBotConnectionStatus>(() =>
-    localStorage.getItem(ONEBOT_CONFIG_STORAGE_KEY) ? "checking" : "idle"
-  );
-  const [eventStatus, setEventStatus] = useState<"idle" | "connected" | "disconnected" | "error">("idle");
-  const [lastError, setLastError] = useState("");
-  const [groups, setGroups] = useState<OneBotGroupInfo[]>([]);
-  const [groupsLoading, setGroupsLoading] = useState(false);
-  const [groupsError, setGroupsError] = useState("");
-  const [tasks, setTasks] = useState<CountdownTask[]>([]);
-  const [rules, setRules] = useState<MonitorRule[]>(() => loadMonitorRules());
+  const [activeSection, setActiveSection] = useState<AppSection>(() => loadActiveSection());
+  const [activeKey, setActiveKey] = useState<AppPage>(() => loadActiveSection() === "docs" ? "docs" : "countdown");
+  const initialDocumentSidebarTasks = useMemo(() => loadDocumentTasks().map(toDocumentSidebarTask), []);
+  const [activeDocumentTaskId, setActiveDocumentTaskId] = useState(() => initialDocumentSidebarTasks[0]?.id ?? "");
+  const [documentSidebarTasks, setDocumentSidebarTasks] = useState<DocumentSidebarTask[]>(initialDocumentSidebarTasks);
+  const [documentCreateRequest, setDocumentCreateRequest] = useState(0);
+  const [documentActionRequest, setDocumentActionRequest] = useState<DocumentTaskActionRequest | null>(null);
+  const [documentTasks, setDocumentTasks] = useState<GlobalTaskRegistration[]>(() => createInitialDocumentTasks());
 
   const bridge = window.chatSundial;
   const platform = bridge?.platform ?? "browser";
   const shellPlatform = platform === "darwin" ? "mac" : "windows";
-  const configRef = useRef(config);
-  const tasksRef = useRef(tasks);
-  const rulesRef = useRef(rules);
-  const sendingTaskIdsRef = useRef(new Set<string>());
-  const sendingRuleIdsRef = useRef(new Set<string>());
-  const connectionCheckSeqRef = useRef(0);
-  const skipNextAutoCheckRef = useRef(false);
+  const activeQQPage: QQPage = activeKey === "docs" ? "countdown" : activeKey;
+  const qqSection = useQQSection(activeQQPage);
+  const canUseElectronDocs = Boolean(bridge && platform !== "browser");
 
-  const sidebarItems = useMemo(
+  const requestDocumentTaskAction = useCallback((taskId: string, action: DocumentTaskAction) => {
+    setActiveKey("docs");
+    setActiveDocumentTaskId(taskId);
+    setDocumentActionRequest({ taskId, action, nonce: Date.now() + Math.random() });
+  }, []);
+
+  const docsSidebarItems = useMemo(
     () => [
-      { key: "countdown", label: "倒计时发送", icon: <Icon name="clock" size={16} />, badge: tasks.length || undefined },
-      { key: "monitor", label: "群状态监控", icon: <Icon name="bell" size={16} />, badge: rules.length || undefined },
-      { key: "config", label: "OneBot 配置", icon: <Icon name="settings" size={16} />, badge: connectionStatus === "connected" ? "OK" : undefined }
+      { key: "docs-new", label: <NavLabel group="文档" label="自助提交" />, icon: <Icon name="file" size={16} /> },
+      ...(documentSidebarTasks.length > 0
+        ? [{ key: "docs-task-divider", label: <SidebarDivider /> }]
+        : []),
+      ...documentSidebarTasks.map((task) => ({
+        key: `docs-task:${task.id}`,
+        label: (
+          <DocumentTaskNavLabel
+            task={task}
+            canUseElectronView={canUseElectronDocs}
+            onAction={requestDocumentTaskAction}
+          />
+        ),
+        icon: <Icon name="file" size={14} />,
+        badge: task.statusLabel === "未加载" ? undefined : task.statusLabel
+      }))
     ],
-    [connectionStatus, rules.length, tasks.length]
+    [canUseElectronDocs, documentSidebarTasks, requestDocumentTaskAction]
   );
 
   useEffect(() => {
@@ -87,253 +93,47 @@ export default function App() {
   }, [bridge]);
 
   useEffect(() => {
-    configRef.current = config;
-  }, [config]);
-
-  const checkConnection = useCallback(async (nextConfig: OneBotConfig) => {
-    const checkSeq = ++connectionCheckSeqRef.current;
-    setConnectionStatus("checking");
-    setLastError("");
-
-    const response = await callOneBotAction(nextConfig, "get_status", {});
-    if (checkSeq !== connectionCheckSeqRef.current) {
-      return response.ok;
-    }
-
-    if (response.ok) {
-      setConnectionStatus("connected");
-      setLastError("");
-      return true;
-    }
-
-    setConnectionStatus("error");
-    setLastError(formatOneBotActionError(response, "get_status"));
-    return false;
-  }, []);
-
-  useEffect(() => {
-    if (!hasSavedConfig) {
-      setConnectionStatus("idle");
-      return;
-    }
-
-    if (skipNextAutoCheckRef.current) {
-      skipNextAutoCheckRef.current = false;
-      return;
-    }
-
-    void checkConnection(config);
-  }, [checkConnection, config, hasSavedConfig]);
-
-  useEffect(() => {
-    tasksRef.current = tasks;
-  }, [tasks]);
-
-  useEffect(() => {
-    rulesRef.current = rules;
-  }, [rules]);
-
-  useEffect(() => {
     try {
-      localStorage.setItem(MONITOR_RULES_STORAGE_KEY, JSON.stringify(rules));
+      localStorage.setItem(ACTIVE_SECTION_STORAGE_KEY, activeSection);
     } catch {
-      // Persistence is best-effort; runtime behavior should not break if storage is unavailable.
+      // Section persistence is a UI convenience and should never block rendering.
     }
-  }, [rules]);
+  }, [activeSection]);
 
-  useEffect(() => {
-    if (!hasSavedConfig) {
-      setGroups([]);
-      setGroupsError("");
-      setGroupsLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setGroupsLoading(true);
-    setGroupsError("");
-
-    callOneBotAction(config, "get_group_list", {})
-      .then((response) => {
-        if (cancelled) {
-          return;
-        }
-
-        if (response.ok) {
-          setGroups(parseOneBotGroupList(response.data));
-          setGroupsError("");
-          return;
-        }
-
-        setGroups([]);
-        setGroupsError(response.wording || response.message || `get_group_list 失败: ${response.retcode ?? "unknown"}`);
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setGroups([]);
-          setGroupsError(error instanceof Error ? error.message : String(error));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setGroupsLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [config, hasSavedConfig]);
-
-  const sendTarget = useCallback(async (target: Pick<MonitorRule, "recipientType" | "targetId" | "message">) => {
-    const response = await sendOneBotMessage(configRef.current, target);
-    if (!response.ok) {
-      throw new Error(response.wording || response.message || `OneBot 调用失败: ${response.retcode ?? "unknown"}`);
-    }
-    return response;
+  const selectSection = useCallback((section: AppSection) => {
+    setActiveSection(section);
+    setActiveKey((current) => section === "docs" ? "docs" : current === "docs" ? "countdown" : current);
   }, []);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      const dueTasks = tasksRef.current.filter(
-        (task) => task.status === "waiting" && isCountdownDue(task, Date.now()) && !sendingTaskIdsRef.current.has(task.id)
-      );
-
-      dueTasks.forEach((task) => {
-        sendingTaskIdsRef.current.add(task.id);
-        sendTarget(task)
-          .then(() => {
-            setTasks((current) => current.filter((item) => item.id !== task.id));
-          })
-          .catch((error) => {
-            setTasks((current) =>
-              current.map((item) =>
-                item.id === task.id
-                  ? { ...item, status: "failed", lastError: error instanceof Error ? error.message : String(error) }
-                  : item
-              )
-            );
-          })
-          .finally(() => {
-            sendingTaskIdsRef.current.delete(task.id);
-          });
-      });
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, [sendTarget]);
-
-  useEffect(() => {
-    if (!hasSavedConfig || !config.wsUrl || rules.length === 0) {
-      setEventStatus("idle");
-      return;
-    }
-
-    const ws = new WebSocket(buildOneBotWebSocketUrl(config));
-    setEventStatus("disconnected");
-
-    ws.addEventListener("open", () => setEventStatus("connected"));
-    ws.addEventListener("error", () => setEventStatus("error"));
-    ws.addEventListener("close", () => setEventStatus("disconnected"));
-    ws.addEventListener("message", (message) => {
-      let event: OneBotEvent;
-      try {
-        event = JSON.parse(String(message.data)) as OneBotEvent;
-      } catch {
+  const handleSidebarSelect = useCallback((key: string) => {
+    if (activeSection === "docs") {
+      if (key === "docs-new") {
+        setActiveKey("docs");
+        setActiveDocumentTaskId("");
+        setDocumentCreateRequest((current) => current + 1);
         return;
       }
 
-      rulesRef.current
-        .filter((rule) => rule.enabled !== false && !sendingRuleIdsRef.current.has(rule.id) && matchMonitorEvent(rule, event))
-        .forEach((rule) => {
-          sendingRuleIdsRef.current.add(rule.id);
-          sendTarget(rule)
-            .then(() => {
-              setRules((current) =>
-                current.map((item) =>
-                  item.id === rule.id
-                    ? {
-                        ...item,
-                        enabled: (item.runMode ?? "repeat") === "once" ? false : item.enabled,
-                        lastMatchedAt: Date.now()
-                      }
-                    : item
-                )
-              );
-            })
-            .catch((error) => {
-              setLastError(error instanceof Error ? error.message : String(error));
-            })
-            .finally(() => {
-              sendingRuleIdsRef.current.delete(rule.id);
-            });
-        });
-    });
+      if (key === "docs-task-divider") {
+        return;
+      }
 
-    return () => {
-      ws.close();
-    };
-  }, [config, hasSavedConfig, rules.length, sendTarget]);
-
-  const persistConfig = (nextConfig: OneBotConfig) => {
-    const normalized = normalizeOneBotConfig(nextConfig);
-    localStorage.setItem(ONEBOT_CONFIG_STORAGE_KEY, JSON.stringify(normalized));
-    setConfig(normalized);
-    setHasSavedConfig(true);
-    return normalized;
-  };
-
-  const saveConfig = (nextConfig: OneBotConfig) => {
-    persistConfig(nextConfig);
-    setConnectionStatus("idle");
-    setLastError("");
-  };
-
-  const testConnection = async (nextConfig: OneBotConfig) => {
-    skipNextAutoCheckRef.current = true;
-    const normalized = persistConfig(nextConfig);
-    await checkConnection(normalized);
-  };
-
-  const activePage = useMemo(() => {
-    if (activeKey === "monitor") {
-      return (
-        <MonitorPage
-          rules={rules}
-          groups={groups}
-          groupsLoading={groupsLoading}
-          groupsError={groupsError}
-          eventStatus={eventStatus}
-          onCreateRule={(rule) => setRules((current) => [rule, ...current])}
-          onRemoveRule={(id) => setRules((current) => current.filter((rule) => rule.id !== id))}
-          onToggleRule={(id, enabled) => setRules((current) => current.map((rule) => rule.id === id ? { ...rule, enabled } : rule))}
-        />
-      );
+      if (key.startsWith("docs-task:")) {
+        setActiveKey("docs");
+        setActiveDocumentTaskId(key.slice("docs-task:".length));
+        return;
+      }
     }
 
-    if (activeKey === "config") {
-      return (
-        <ConfigPage
-          config={config}
-          connectionStatus={connectionStatus}
-          lastError={lastError}
-          onSave={saveConfig}
-          onTest={testConnection}
-        />
-      );
-    }
+    setActiveKey(key as AppPage);
+  }, [activeSection]);
 
-    return (
-      <CountdownPage
-        tasks={tasks}
-        groups={groups}
-        groupsLoading={groupsLoading}
-        groupsError={groupsError}
-        onCreateTask={(task) => setTasks((current) => [task, ...current])}
-        onRemoveTask={(id) => setTasks((current) => current.filter((task) => task.id !== id))}
-      />
-    );
-  }, [activeKey, config, connectionStatus, eventStatus, groups, groupsError, groupsLoading, lastError, rules, tasks]);
+  const sidebarItems = activeSection === "docs" ? docsSidebarItems : qqSection.sidebarItems;
+  const sidebarActiveKey = activeSection === "docs" ? activeDocumentTaskId ? `docs-task:${activeDocumentTaskId}` : "docs-new" : activeQQPage;
+  const globalTasks = useMemo(
+    () => [...qqSection.taskRegistrations, ...documentTasks],
+    [documentTasks, qqSection.taskRegistrations]
+  );
 
   return (
     <ThemeProvider
@@ -355,17 +155,31 @@ export default function App() {
         sidebar={
           <Sidebar
             items={sidebarItems}
-            activeKey={activeKey}
-            onSelect={(key) => setActiveKey(key as AppPage)}
+            activeKey={sidebarActiveKey}
+            onSelect={(key) => handleSidebarSelect(String(key))}
             header={
-              <div className="sidebar-brand">
-                <span className="sidebar-brand__icon">
-                  <Icon name="sun" size={18} />
-                </span>
-                <span>
-                  <strong>ChatSundial</strong>
-                  <small>Desktop preview</small>
-                </span>
+              <div className="sidebar-header-stack">
+                <div className="sidebar-brand">
+                  <span className="sidebar-brand__icon">
+                    <Icon name="sun" size={18} />
+                  </span>
+                  <span>
+                    <strong>ChatSundial</strong>
+                    <small>Desktop preview</small>
+                  </span>
+                </div>
+                <div className="section-switch">
+                  <Radio.Group
+                    value={activeSection}
+                    onChange={(value) => selectSection(value as AppSection)}
+                    options={[
+                      { value: "qq", label: "QQ" },
+                      { value: "docs", label: "文档" }
+                    ]}
+                    variant="segmented"
+                    size="sm"
+                  />
+                </div>
               </div>
             }
             footer={
@@ -380,93 +194,182 @@ export default function App() {
         }
       >
         <div className="workspace" aria-label="主内容区">
-          {activePage}
+          <div className="workspace-stack">
+            <section
+              className={`workspace-panel workspace-panel--qq ${activeSection === "qq" ? "is-active" : "is-hidden"}`}
+              aria-hidden={activeSection !== "qq"}
+            >
+              {qqSection.content}
+            </section>
+            <section
+              className={`workspace-panel workspace-panel--docs ${activeSection === "docs" ? "is-active" : "is-hidden"}`}
+              aria-hidden={activeSection !== "docs"}
+            >
+              <DocumentSubmitPage
+                createRequest={documentCreateRequest}
+                selectedTaskId={activeDocumentTaskId}
+                actionRequest={documentActionRequest}
+                onActiveTaskChange={setActiveDocumentTaskId}
+                onSidebarTasksChange={setDocumentSidebarTasks}
+                onTaskSnapshotChange={setDocumentTasks}
+              />
+            </section>
+          </div>
         </div>
 
         <StatusBar
-          left={
-            <StatusBar.Item icon={<Icon name="sync" size={12} />} tone={statusTone(connectionStatus)}>
-              OneBot {statusLabel(connectionStatus)}
+          left={activeSection === "docs" ? (
+            <StatusBar.Item icon={<Icon name="file" size={12} />} tone="accent">
+              文档板块
             </StatusBar.Item>
-          }
-          center={<StatusBar.Item tone="accent">{config.protocol === "websocket" ? config.wsUrl : config.httpUrl}</StatusBar.Item>}
+          ) : qqSection.statusLeft}
+          center={<StatusBar.Item tone="accent">{activeSection === "docs" ? "腾讯文档自助提交" : qqSection.statusCenter}</StatusBar.Item>}
           right={
-            <>
-              <StatusBar.Item tone="muted">事件流 {eventStatusLabel(eventStatus)}</StatusBar.Item>
+            activeSection === "docs" ? (
               <StatusBar.Item tone="muted">{formatTime(now)}</StatusBar.Item>
-            </>
+            ) : (
+              <>
+                <StatusBar.Item tone="muted">事件流 {qqSection.eventStatusLabel}</StatusBar.Item>
+                <StatusBar.Item tone="muted">{formatTime(now)}</StatusBar.Item>
+              </>
+            )
           }
         />
+        <TaskCenter tasks={globalTasks} now={now} />
       </AppShell>
     </ThemeProvider>
   );
 }
 
-function loadOneBotConfig(): OneBotConfig {
-  try {
-    const raw = localStorage.getItem(ONEBOT_CONFIG_STORAGE_KEY);
-    return raw ? normalizeOneBotConfig(JSON.parse(raw) as Partial<OneBotConfig>) : DEFAULT_ONEBOT_CONFIG;
-  } catch {
-    return DEFAULT_ONEBOT_CONFIG;
-  }
+function NavLabel({ group, label }: { group: string; label: string }) {
+  return (
+    <span className="nav-label">
+      <small>{group}</small>
+      <span>{label}</span>
+    </span>
+  );
 }
 
-function loadMonitorRules(): MonitorRule[] {
-  try {
-    const raw = localStorage.getItem(MONITOR_RULES_STORAGE_KEY);
-    if (!raw) {
-      return [];
+function DocumentTaskNavLabel({
+  task,
+  canUseElectronView,
+  onAction
+}: {
+  task: DocumentSidebarTask;
+  canUseElectronView: boolean;
+  onAction: (taskId: string, action: DocumentTaskAction) => void;
+}) {
+  const menuItems: ContextMenuItem[] = [
+    {
+      key: "start",
+      label: "开始任务",
+      icon: <Icon name="play" size={14} />,
+      disabled: !canUseElectronView || task.status === "running",
+      onSelect: () => onAction(task.id, "start")
+    },
+    {
+      key: "update",
+      label: "更新运行配置",
+      icon: <Icon name="sync" size={14} />,
+      disabled: !canUseElectronView || task.status !== "running",
+      onSelect: () => onAction(task.id, "update")
+    },
+    {
+      key: "reload",
+      label: "刷新网页",
+      icon: <Icon name="sync" size={14} />,
+      disabled: !canUseElectronView,
+      onSelect: () => onAction(task.id, "reload")
+    },
+    {
+      key: "stop",
+      label: "停止任务",
+      icon: <Icon name="pause" size={14} />,
+      disabled: !canUseElectronView || task.status !== "running",
+      onSelect: () => onAction(task.id, "stop")
+    },
+    { key: "run-divider", type: "divider" },
+    {
+      key: "reset",
+      label: "重新开始",
+      icon: <Icon name="reload" size={14} />,
+      onSelect: () => onAction(task.id, "reset")
+    },
+    {
+      key: "duplicate",
+      label: "复制任务",
+      icon: <Icon name="copy" size={14} />,
+      onSelect: () => onAction(task.id, "duplicate")
+    },
+    {
+      key: "devtools",
+      label: "开发者工具",
+      icon: <Icon name="code" size={14} />,
+      disabled: !canUseElectronView,
+      onSelect: () => onAction(task.id, "openDevTools")
+    },
+    { key: "danger-divider", type: "divider" },
+    {
+      key: "remove",
+      label: "删除任务",
+      icon: <Icon name="trash" size={14} />,
+      danger: true,
+      onSelect: () => onAction(task.id, "remove")
     }
+  ];
 
-    const value = JSON.parse(raw);
-    return Array.isArray(value) ? value.filter(isMonitorRuleLike).map(normalizeMonitorRule) : [];
+  return (
+    <ContextMenu items={menuItems} minWidth={188}>
+      <span className="nav-label nav-label--context">
+        <small>任务</small>
+        <span>{task.name || "未命名任务"}</span>
+      </span>
+    </ContextMenu>
+  );
+}
+
+function SidebarDivider() {
+  return (
+    <span className="sidebar-divider-label" aria-hidden="true">
+      <Divider className="sidebar-section-divider" sunken />
+    </span>
+  );
+}
+
+function loadActiveSection(): AppSection {
+  if (typeof localStorage === "undefined") {
+    return "qq";
+  }
+
+  try {
+    return localStorage.getItem(ACTIVE_SECTION_STORAGE_KEY) === "docs" ? "docs" : "qq";
   } catch {
-    return [];
+    return "qq";
   }
 }
 
-function normalizeMonitorRule(rule: MonitorRule): MonitorRule {
+function createInitialDocumentTasks(): GlobalTaskRegistration[] {
+  return loadDocumentTasks().map(buildDocumentTaskRegistration);
+}
+
+function toDocumentSidebarTask(task: DocumentSubmitTask): DocumentSidebarTask {
   return {
-    ...rule,
-    runMode: rule.runMode === "once" ? "once" : "repeat"
+    id: task.id,
+    name: task.name,
+    status: task.status,
+    statusLabel: documentStatusLabel(task.status)
   };
 }
 
-function isMonitorRuleLike(value: unknown): value is MonitorRule {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const record = value as Partial<MonitorRule>;
-  return Boolean(record.id && record.sourceGroupId && record.trigger && record.recipientType && record.targetId && record.message);
-}
-
-function statusTone(status: OneBotConnectionStatus) {
-  if (status === "connected") return "success";
-  if (status === "checking") return "warning";
-  if (status === "error") return "danger";
-  return "muted";
-}
-
-function statusLabel(status: OneBotConnectionStatus) {
-  if (status === "connected") return "已连接";
-  if (status === "checking") return "检测中";
-  if (status === "error") return "连接失败";
-  return "未连接";
-}
-
-function eventStatusLabel(status: "idle" | "connected" | "disconnected" | "error") {
-  if (status === "connected") return "已连接";
-  if (status === "error") return "错误";
-  if (status === "disconnected") return "断开";
-  return "未启用";
-}
-
-function formatOneBotActionError(response: { wording?: string; message?: string; retcode?: number; httpStatus?: number }, action: string) {
-  if (response.wording || response.message) {
-    return response.wording || response.message || "";
-  }
-
-  const detail = response.retcode ?? response.httpStatus ?? "unknown";
-  return `${action} 失败: ${detail}`;
+function documentStatusLabel(status: DocumentSubmitTask["status"]) {
+  const label: Record<DocumentSubmitTask["status"], string> = {
+    idle: "未加载",
+    loading: "加载中",
+    ready: "就绪",
+    running: "运行中",
+    success: "完成",
+    error: "错误",
+    stopped: "停止"
+  };
+  return label[status];
 }
