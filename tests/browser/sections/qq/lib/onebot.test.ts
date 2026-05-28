@@ -9,7 +9,7 @@ import {
   normalizeOneBotConfig,
   normalizeOneBotLocalPort,
   parseOneBotGroupList
-} from "./onebot";
+} from "@/sections/qq/lib/onebot";
 
 describe("onebot helpers", () => {
   it("builds HTTP action requests with normalized base URL and bearer token", () => {

@@ -1,4 +1,5 @@
-import type { GlobalTaskRegistration, GlobalTaskStatus } from "../../../components/TaskCenter";
+import type { GlobalTaskRegistration, GlobalTaskStatus } from "@/lib/globalTask";
+import { readJson, writeJson } from "@/lib/storage";
 import {
   getDateInputValue,
   getTimeInputValue,
@@ -8,7 +9,6 @@ import {
 } from "./documentAutomation";
 
 export const DOCUMENT_TASKS_STORAGE_KEY = "chat-sundial:document-submit-tasks";
-const LEGACY_DOCUMENT_SETTINGS_STORAGE_KEY = "chat-sundial:document-submit-settings";
 
 export type DocumentViewStatus = "idle" | "loading" | "ready" | "running" | "success" | "error" | "stopped";
 
@@ -29,11 +29,12 @@ export interface DocumentSubmitTask {
   updatedAt: number;
 }
 
-export type DocumentSettings = Pick<
+export type DocumentTaskPersistedRecord = Pick<
   DocumentSubmitTask,
   "url" | "mode" | "date" | "time" | "offsetMs" | "pollingIntervalMs" | "confirmAfterSubmit" | "fillRules"
->;
+> & Partial<Pick<DocumentSubmitTask, "id" | "name" | "updatedAt">>;
 
+/** 把文档任务转换为全局任务中心可展示的注册项。 */
 export function buildDocumentTaskRegistration(task: DocumentSubmitTask): GlobalTaskRegistration {
   const isScheduledMode = task.mode === "scheduled-confirm";
 
@@ -56,6 +57,7 @@ export function buildDocumentTaskRegistration(task: DocumentSubmitTask): GlobalT
   };
 }
 
+/** 创建一个带默认时间和默认填充规则的新文档任务。 */
 export function createDefaultDocumentTask(index = 1, patch: Partial<DocumentSubmitTask> = {}): DocumentSubmitTask {
   const nextMinute = new Date(Date.now() + 60_000);
   const id = createDocumentTaskId();
@@ -79,47 +81,22 @@ export function createDefaultDocumentTask(index = 1, patch: Partial<DocumentSubm
   };
 }
 
+/** 从持久化记录中恢复文档任务，启动时只恢复长期配置，不恢复运行态。 */
 export function loadDocumentTasks(): DocumentSubmitTask[] {
-  if (typeof window === "undefined") {
+  const rawTasks = readJson<unknown[]>(DOCUMENT_TASKS_STORAGE_KEY, []);
+  if (!Array.isArray(rawTasks)) {
     return [];
   }
 
-  try {
-    const raw = window.localStorage.getItem(DOCUMENT_TASKS_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) {
-        const tasks = parsed.map((item, index) => normalizeDocumentTask(item, index + 1)).filter(Boolean) as DocumentSubmitTask[];
-        if (tasks.length > 0) {
-          return tasks;
-        }
-      }
-    }
-
-    const legacyRaw = window.localStorage.getItem(LEGACY_DOCUMENT_SETTINGS_STORAGE_KEY);
-    if (legacyRaw) {
-      const legacy = normalizeLegacySettings(JSON.parse(legacyRaw) as Partial<DocumentSettings>);
-      return [createDefaultDocumentTask(1, { ...legacy, name: "默认文档任务" })];
-    }
-  } catch {
-    return [];
-  }
-
-  return [];
+  return rawTasks.map((item, index) => normalizeDocumentTask(item, index + 1)).filter(Boolean) as DocumentSubmitTask[];
 }
 
+/** 保存文档任务长期配置，避免把运行中、加载中和错误提示持久化为下一次启动状态。 */
 export function saveDocumentTasks(tasks: DocumentSubmitTask[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(DOCUMENT_TASKS_STORAGE_KEY, JSON.stringify(tasks));
-  } catch {
-    // Local persistence should not block the submit workflow.
-  }
+  writeJson(DOCUMENT_TASKS_STORAGE_KEY, tasks.map(toPersistedDocumentTask));
 }
 
+/** 归一化提交模式，未知值回退到开放后填充提交。 */
 export function normalizeSubmitMode(value: unknown): DocumentSubmitMode {
   if (value === "scheduled-confirm" || value === "await-fill-submit") {
     return value;
@@ -128,6 +105,7 @@ export function normalizeSubmitMode(value: unknown): DocumentSubmitMode {
   return "await-fill-submit";
 }
 
+/** 创建单条默认填充规则。 */
 export function createDefaultFillRule(questionNumber: number): DocumentFillRuleDraft {
   return {
     id: createDocumentTaskId(),
@@ -138,6 +116,7 @@ export function createDefaultFillRule(questionNumber: number): DocumentFillRuleD
   };
 }
 
+/** 创建文档任务和填充规则通用的随机 id。 */
 export function createDocumentTaskId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -146,6 +125,24 @@ export function createDocumentTaskId() {
   return `task-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+/** 把运行时任务压缩成可长期保存的配置记录。 */
+function toPersistedDocumentTask(task: DocumentSubmitTask): DocumentTaskPersistedRecord {
+  return {
+    id: task.id,
+    name: task.name,
+    url: task.url,
+    mode: task.mode,
+    date: task.date,
+    time: task.time,
+    offsetMs: task.offsetMs,
+    pollingIntervalMs: task.pollingIntervalMs,
+    confirmAfterSubmit: task.confirmAfterSubmit,
+    fillRules: task.fillRules,
+    updatedAt: task.updatedAt
+  };
+}
+
+/** 把未知持久化记录恢复成运行时文档任务。 */
 function normalizeDocumentTask(value: unknown, index: number): DocumentSubmitTask | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -153,7 +150,6 @@ function normalizeDocumentTask(value: unknown, index: number): DocumentSubmitTas
 
   const task = value as Partial<DocumentSubmitTask>;
   const fallback = createDefaultDocumentTask(index);
-  const restoredState = normalizeRestoredViewState(task.status);
 
   return {
     ...fallback,
@@ -168,54 +164,14 @@ function normalizeDocumentTask(value: unknown, index: number): DocumentSubmitTas
     pollingIntervalMs: Number.isFinite(task.pollingIntervalMs) ? Number(task.pollingIntervalMs) : fallback.pollingIntervalMs,
     confirmAfterSubmit: typeof task.confirmAfterSubmit === "boolean" ? task.confirmAfterSubmit : fallback.confirmAfterSubmit,
     fillRules: Array.isArray(task.fillRules) && task.fillRules.length ? task.fillRules : fallback.fillRules,
-    status: restoredState.status,
-    message: restoredState.message ?? (typeof task.message === "string" ? task.message : fallback.message),
-    logs: Array.isArray(task.logs) ? task.logs.slice(-80) : [],
+    status: "idle",
+    message: "等待配置并加载网页",
+    logs: [],
     updatedAt: Number.isFinite(task.updatedAt) ? Number(task.updatedAt) : fallback.updatedAt
   };
 }
 
-function normalizeLegacySettings(settings: Partial<DocumentSettings>): DocumentSettings {
-  const fallback = createDefaultDocumentTask(1);
-
-  return {
-    url: typeof settings.url === "string" ? settings.url : fallback.url,
-    mode: normalizeSubmitMode(settings.mode),
-    date: typeof settings.date === "string" ? settings.date : fallback.date,
-    time: typeof settings.time === "string" ? settings.time : fallback.time,
-    offsetMs: Number.isFinite(settings.offsetMs) ? Number(settings.offsetMs) : fallback.offsetMs,
-    pollingIntervalMs: Number.isFinite(settings.pollingIntervalMs) ? Number(settings.pollingIntervalMs) : fallback.pollingIntervalMs,
-    confirmAfterSubmit: typeof settings.confirmAfterSubmit === "boolean" ? settings.confirmAfterSubmit : fallback.confirmAfterSubmit,
-    fillRules: Array.isArray(settings.fillRules) && settings.fillRules.length ? settings.fillRules : fallback.fillRules
-  };
-}
-
-function normalizeViewStatus(value: unknown): DocumentViewStatus {
-  if (value === "loading" || value === "ready" || value === "running" || value === "success" || value === "error" || value === "stopped") {
-    return value;
-  }
-
-  return "idle";
-}
-
-function normalizeRestoredViewState(value: unknown): { status: DocumentViewStatus; message?: string } {
-  if (value === "running") {
-    return {
-      status: "stopped",
-      message: "应用重启后任务已停止，点击开始任务可重新运行"
-    };
-  }
-
-  if (value === "loading") {
-    return {
-      status: "idle",
-      message: "上次网页加载已中断，请重新加载或开始任务"
-    };
-  }
-
-  return { status: normalizeViewStatus(value) };
-}
-
+/** 把文档任务运行态映射到全局任务中心状态。 */
 function documentTaskStatus(status: DocumentViewStatus): GlobalTaskStatus {
   if (status === "running") return "running";
   if (status === "loading") return "waiting";
@@ -225,6 +181,7 @@ function documentTaskStatus(status: DocumentViewStatus): GlobalTaskStatus {
   return "idle";
 }
 
+/** 把文档任务运行态转换为中文状态标签。 */
 function documentStatusLabel(status: DocumentViewStatus) {
   const label: Record<DocumentViewStatus, string> = {
     idle: "未加载",
@@ -238,16 +195,19 @@ function documentStatusLabel(status: DocumentViewStatus) {
   return label[status];
 }
 
+/** 把文档提交模式转换为全局任务中心标题文案。 */
 function modeLabel(mode: DocumentSubmitMode) {
   if (mode === "scheduled-confirm") return "文档到点确认提交";
   return "文档开放后填充提交";
 }
 
+/** 根据提交模式生成全局任务中心默认主描述。 */
 function documentTaskPrimary(mode: DocumentSubmitMode) {
   if (mode === "scheduled-confirm") return "等待到点确认提交";
   return "等待收集开放后填充并提交";
 }
 
+/** 获取文档任务最近更新时间，优先使用日志时间。 */
 function latestTaskTime(task: DocumentSubmitTask) {
   const latest = task.logs[task.logs.length - 1]?.time;
   if (latest) {

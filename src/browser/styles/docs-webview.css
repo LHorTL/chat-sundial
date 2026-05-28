@@ -1,0 +1,91 @@
+.document-view-panel {
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow: var(--neu-shadow-subtle);
+  overflow: hidden;
+}
+
+.document-view-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg-muted) 18%, transparent);
+  overflow: hidden;
+}
+
+.document-view-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.document-view-title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-view-status-text {
+  margin-top: 2px;
+  line-height: 1.45;
+  white-space: normal !important;
+}
+
+.document-view-status {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 260px;
+}
+
+.document-view-header .tag {
+  max-width: 180px;
+}
+
+.document-webview-slot {
+  position: relative;
+  min-height: 420px;
+  background: color-mix(in srgb, var(--bg) 88%, var(--accent-soft));
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.document-webview {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.document-webview.active {
+  z-index: 1;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (max-width: 1280px) {
+  .document-view-panel {
+    height: auto;
+    min-height: 580px;
+  }
+}
+
+@media (max-width: 700px) {
+  .document-view-panel {
+    min-height: 520px;
+  }
+}

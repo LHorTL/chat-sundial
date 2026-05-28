@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { CountdownPage } from "./CountdownPage";
+import { CountdownPage } from "@/sections/qq/pages/CountdownPage";
 
 describe("CountdownPage", () => {
   it("renders field containers without native labels around complex controls", () => {

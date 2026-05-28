@@ -3,8 +3,9 @@ import {
   buildDocumentTaskRegistration,
   createDefaultDocumentTask,
   DOCUMENT_TASKS_STORAGE_KEY,
-  loadDocumentTasks
-} from "./documentTaskRegistration";
+  loadDocumentTasks,
+  saveDocumentTasks
+} from "@/sections/docs/lib/documentTaskRegistration";
 
 describe("document task registration", () => {
   afterEach(() => {
@@ -68,7 +69,7 @@ describe("document task registration", () => {
     expect(runningTask).toMatchObject({ status: "running", statusLabel: "运行中" });
   });
 
-  it("resets transient persisted task statuses on restore", () => {
+  it("restores persisted document tasks as static idle tasks", () => {
     const restoredTasks = loadTasksFromStorage([
       createDefaultDocumentTask(1, { id: "running-task", status: "running", message: "任务运行中" }),
       createDefaultDocumentTask(2, { id: "loading-task", status: "loading", message: "网页加载中" }),
@@ -79,20 +80,50 @@ describe("document task registration", () => {
     ]);
 
     expect(restoredTasks.find((task) => task.id === "running-task")).toMatchObject({
-      status: "stopped",
-      message: "应用重启后任务已停止，点击开始任务可重新运行"
+      status: "idle",
+      message: "等待配置并加载网页",
+      logs: []
     });
     expect(restoredTasks.find((task) => task.id === "loading-task")).toMatchObject({
       status: "idle",
-      message: "上次网页加载已中断，请重新加载或开始任务"
+      message: "等待配置并加载网页",
+      logs: []
     });
-    expect(restoredTasks.find((task) => task.id === "success-task")).toMatchObject({ status: "success", message: "提交任务已完成" });
-    expect(restoredTasks.find((task) => task.id === "error-task")).toMatchObject({ status: "error", message: "提交时间不能早于当前时间" });
-    expect(restoredTasks.find((task) => task.id === "stopped-task")).toMatchObject({ status: "stopped", message: "任务已停止" });
-    expect(restoredTasks.find((task) => task.id === "ready-task")).toMatchObject({ status: "ready", message: "当前是填写页，检测到 2 个题目" });
+    expect(restoredTasks.find((task) => task.id === "success-task")).toMatchObject({ status: "idle", message: "等待配置并加载网页", logs: [] });
+    expect(restoredTasks.find((task) => task.id === "error-task")).toMatchObject({ status: "idle", message: "等待配置并加载网页", logs: [] });
+    expect(restoredTasks.find((task) => task.id === "stopped-task")).toMatchObject({ status: "idle", message: "等待配置并加载网页", logs: [] });
+    expect(restoredTasks.find((task) => task.id === "ready-task")).toMatchObject({ status: "idle", message: "等待配置并加载网页", logs: [] });
+  });
+
+  it("persists only durable document task configuration", () => {
+    const persisted = new Map<string, string>();
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => persisted.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          persisted.set(key, value);
+        }
+      }
+    });
+
+    saveDocumentTasks([
+      createDefaultDocumentTask(1, {
+        id: "running-task",
+        status: "running",
+        message: "任务运行中",
+        logs: [{ time: "2026-05-27T05:00:00.000Z", message: "任务开始" }]
+      })
+    ]);
+
+    const raw = JSON.parse(persisted.get(DOCUMENT_TASKS_STORAGE_KEY) || "[]") as Array<Record<string, unknown>>;
+    expect(raw[0]).toMatchObject({ id: "running-task", name: "文档任务 1" });
+    expect(raw[0]).not.toHaveProperty("status");
+    expect(raw[0]).not.toHaveProperty("message");
+    expect(raw[0]).not.toHaveProperty("logs");
   });
 });
 
+/** 把给定任务数组写入测试 localStorage 后执行加载流程。 */
 function loadTasksFromStorage(tasks: unknown[]) {
   vi.stubGlobal("window", {
     localStorage: {

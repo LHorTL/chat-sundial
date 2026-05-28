@@ -1,6 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { DocumentSubmitPage, isDocumentUrlLocked, shouldLoadConfiguredDocument } from "./DocumentSubmitPage";
+import {
+  buildDocumentPageStatePatch,
+  DOCUMENT_PENDING_LOAD_TIMEOUT_MS,
+  isPendingDocumentLoadExpired,
+  shouldRequestConfiguredDocumentLoad
+} from "@/sections/docs/lib/documentViewModel";
+import { DocumentSubmitPage, isDocumentUrlLocked, shouldLoadConfiguredDocument } from "@/sections/docs/pages/DocumentSubmitPage";
 
 describe("DocumentSubmitPage", () => {
   it("renders the control surface for Tencent Docs submission", () => {
@@ -38,5 +44,38 @@ describe("DocumentSubmitPage", () => {
       "https://docs.qq.com/form/page/DRVNEW#/result",
       "https://docs.qq.com/form/page/DRVNEW#/fill"
     )).toBe(false);
+  });
+
+  it("does not request the same configured document while a load is already pending", () => {
+    const configuredUrl = "https://docs.qq.com/form/page/DRVJjUlVsTkpoaG9K#/fill";
+
+    expect(shouldRequestConfiguredDocumentLoad("about:blank", configuredUrl, configuredUrl)).toBe(false);
+    expect(shouldRequestConfiguredDocumentLoad("about:blank", configuredUrl, "")).toBe(true);
+    expect(shouldRequestConfiguredDocumentLoad(
+      "about:blank",
+      configuredUrl,
+      "https://docs.qq.com/form/page/another#/fill"
+    )).toBe(true);
+  });
+
+  it("keeps runtime page urls out of persisted task patches", () => {
+    const patch = buildDocumentPageStatePatch({
+      ok: true,
+      message: "当前是填写页",
+      pageKind: "form",
+      url: "https://docs.qq.com/form/page/DRVJjUlVsTkpoaG9K#/result",
+      questionCount: 2,
+      hasSubmitButton: true
+    });
+
+    expect(patch).toEqual({ status: "ready", message: "当前是填写页" });
+    expect(patch).not.toHaveProperty("url");
+  });
+
+  it("marks pending document loads as expired after the retry guard window", () => {
+    const startedAt = 1_000;
+
+    expect(isPendingDocumentLoadExpired(startedAt, startedAt + DOCUMENT_PENDING_LOAD_TIMEOUT_MS - 1)).toBe(false);
+    expect(isPendingDocumentLoadExpired(startedAt, startedAt + DOCUMENT_PENDING_LOAD_TIMEOUT_MS)).toBe(true);
   });
 });

@@ -4,11 +4,14 @@
     "module": "ESNext",
     "moduleResolution": "Node",
     "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo",
     "types": [
       "node"
     ]
   },
   "include": [
+    "src/main/**/*.ts",
     "src/main/vite.config.ts",
     "src/browser/vite.config.ts"
   ]
