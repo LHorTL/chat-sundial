@@ -111,7 +111,16 @@ export function parseDocumentTargetTime(date: string, time: string): number {
   }
 
   const [year, month, day] = date.split("-").map(Number);
-  const target = new Date(year, month - 1, day, hour, minute, second).getTime();
+  const targetDate = new Date(year, month - 1, day, hour, minute, second);
+  if (
+    targetDate.getFullYear() !== year ||
+    targetDate.getMonth() !== month - 1 ||
+    targetDate.getDate() !== day
+  ) {
+    throw new Error("提交日期无效");
+  }
+
+  const target = targetDate.getTime();
   if (!Number.isFinite(target)) {
     throw new Error("提交时间无效");
   }
@@ -155,8 +164,12 @@ export function validateDocumentRunStartTime(request: DocumentRunRequest, nowMs 
   }
 }
 
+export function shouldToggleChoiceOption(isSelected: boolean, index: number, targetIndexes: number[]) {
+  return isSelected !== targetIndexes.includes(index);
+}
+
 export function buildDocumentRunScript(request: DocumentRunRequest): string {
-  return `(${documentRunScriptSource})(${JSON.stringify(request)})`;
+  return `(${documentRunScriptSource})(${JSON.stringify(request)}, ${isChoiceOptionSelectedSource}, ${shouldToggleChoiceOption})`;
 }
 
 export function buildDocumentUpdateScript(request: DocumentRunRequest): string {
@@ -428,7 +441,22 @@ function documentScanScriptSource(): DocumentRunResult {
   };
 }
 
-function documentRunScriptSource(request: DocumentRunRequest): Promise<DocumentRunResult> {
+function isChoiceOptionSelectedSource(option: Element) {
+  const element = option as HTMLElement;
+  const input = element.querySelector("input") as HTMLInputElement | null;
+  const className = element.className.toString();
+  return Boolean(input?.checked) ||
+    element.getAttribute("aria-checked") === "true" ||
+    className.includes("checked") ||
+    className.includes("selected") ||
+    className.includes("active");
+}
+
+function documentRunScriptSource(
+  request: DocumentRunRequest,
+  isChoiceOptionSelected: (option: Element) => boolean,
+  shouldToggleChoiceOption: (isSelected: boolean, index: number, targetIndexes: number[]) => boolean
+): Promise<DocumentRunResult> {
   const stateKey = "__chatSundialAutoSubmit";
   const logs: DocumentRunLog[] = [];
   const state = { stopped: false, request, revision: 0 };
@@ -559,15 +587,22 @@ function documentRunScriptSource(request: DocumentRunRequest): Promise<DocumentR
       return;
     }
 
-    const options = root.querySelectorAll(".form-choice-checkbox-option");
-    (rule.value as number[]).forEach((index) => {
-      const target = options[index] as HTMLElement | undefined;
+    const options = Array.from(root.querySelectorAll(".form-choice-checkbox-option")) as HTMLElement[];
+    const targetIndexes = rule.value as number[];
+    targetIndexes.forEach((index) => {
+      const target = options[index];
       if (!target) {
         throw new Error(`第 ${rule.questionIndex + 1} 题多选项 ${index} 不存在`);
       }
-      target.click();
     });
-    log(`第 ${rule.questionIndex + 1} 题多选已选择 ${(rule.value as number[]).join(", ")}`);
+
+    options.forEach((option, index) => {
+      const selected = isChoiceOptionSelected(option);
+      if (shouldToggleChoiceOption(selected, index, targetIndexes)) {
+        option.click();
+      }
+    });
+    log(`第 ${rule.questionIndex + 1} 题多选已选择 ${targetIndexes.join(", ")}`);
   };
 
   const fillAll = () => {

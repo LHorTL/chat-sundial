@@ -10,6 +10,7 @@ import {
   normalizeDocumentFillRules,
   parseDocumentTargetTime,
   resolveDocumentPageState,
+  shouldToggleChoiceOption,
   validateDocumentRunStartTime
 } from "./documentAutomation";
 
@@ -43,9 +44,23 @@ describe("document automation helpers", () => {
     ).toThrow("选项序号必须是非负整数");
   });
 
+  it("only toggles checkbox options whose current state differs from the configured answer", () => {
+    const targetIndexes = [0, 2];
+
+    expect(shouldToggleChoiceOption(true, 0, targetIndexes)).toBe(false);
+    expect(shouldToggleChoiceOption(false, 0, targetIndexes)).toBe(true);
+    expect(shouldToggleChoiceOption(true, 1, targetIndexes)).toBe(true);
+    expect(shouldToggleChoiceOption(false, 1, targetIndexes)).toBe(false);
+  });
+
   it("parses target date and time with second precision", () => {
     expect(parseDocumentTargetTime("2026-05-27", "14:11:00")).toBe(new Date(2026, 4, 27, 14, 11, 0).getTime());
     expect(() => parseDocumentTargetTime("2026-05-27", "14:61:00")).toThrow("提交时间无效");
+  });
+
+  it("rejects calendar dates that JavaScript would silently normalize", () => {
+    expect(() => parseDocumentTargetTime("2026-02-31", "14:11:00")).toThrow("提交日期无效");
+    expect(() => parseDocumentTargetTime("2026-04-31", "14:11:00")).toThrow("提交日期无效");
   });
 
   it("rejects scheduled submit times earlier than now", () => {
@@ -122,6 +137,8 @@ describe("document automation helpers", () => {
     expect(script).toContain(".question-main-content");
     expect(script).toContain(".question-commit button");
     expect(script).toContain("clickConfirmWithSubmitRetry");
+    expect(script).toContain("shouldToggleChoiceOption");
+    expect(script).toContain("isChoiceOptionSelected");
     expect(script).toContain("submitAndConfirm");
     expect(script).toContain("到点后未检测到二次确认弹窗，重新点击提交按钮");
   });

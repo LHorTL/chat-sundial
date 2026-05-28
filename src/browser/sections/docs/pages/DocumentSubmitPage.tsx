@@ -106,7 +106,7 @@ export function DocumentSubmitPage({
   const canUseElectronView = canUseDocumentWebview();
   const isScheduledMode = activeTask?.mode === "scheduled-confirm";
   const isActiveTaskSaved = Boolean(activeTask && tasks.some((task) => task.id === activeTask.id));
-  const isTaskRunning = activeTask?.status === "running";
+  const isTaskRunning = isDocumentUrlLocked(activeTask?.status);
   const webviewTasks = useMemo(
     () => activeTask ? [activeTask, ...tasks.filter((task) => task.id !== activeTask.id)] : tasks,
     [activeTask, tasks]
@@ -518,15 +518,13 @@ export function DocumentSubmitPage({
 
       const webview = await waitForTaskWebview(task.id);
       const currentUrl = getWebviewUrl(webview);
-      if (!isTencentDocsRuntimeUrl(currentUrl)) {
+      if (shouldLoadConfiguredDocument(currentUrl, task.url)) {
         patchTask(task.id, { status: "loading", message: "网页加载中" });
         const loadResult = await loadWebviewUrl(task.id, task.url);
         if (!loadResult.ok) {
           patchTask(task.id, { status: "error", message: loadResult.message || "网页加载失败" });
           return;
         }
-      } else {
-        patchTask(task.id, { url: currentUrl });
       }
 
       if (!await ensureDocumentFillPage(task.id)) {
@@ -730,14 +728,25 @@ export function DocumentSubmitPage({
             <Field label="腾讯文档地址">
               <Input
                 value={activeTask.url}
-                onValueChange={(url) => patchTask(activeTask.id, { url })}
+                onValueChange={(url) => {
+                  if (isTaskRunning) {
+                    return;
+                  }
+
+                  patchTask(activeTask.id, { url });
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
+                    if (isTaskRunning) {
+                      return;
+                    }
+
                     void loadDocument(activeTask);
                   }
                 }}
-                placeholder="输入腾讯文档地址后按 Enter 加载"
+                placeholder="输入腾讯文档地址后自动加载，按 Enter 可立即加载"
+                disabled={isTaskRunning}
                 allowClear
               />
             </Field>
@@ -983,13 +992,13 @@ function DocumentTaskWebview({
 
     const webview = ref.current;
     const targetUrl = normalizeTencentDocsUrl(task.url);
-    if (!webview || !targetUrl) {
+    if (!webview || !targetUrl || task.status === "running") {
       return;
     }
 
     const timer = window.setTimeout(() => {
       const currentUrl = getWebviewUrl(webview);
-      if (isTencentDocsRuntimeUrl(currentUrl)) {
+      if (!shouldLoadConfiguredDocument(currentUrl, targetUrl)) {
         return;
       }
 
@@ -1005,7 +1014,7 @@ function DocumentTaskWebview({
     }, 100);
 
     return () => window.clearTimeout(timer);
-  }, [active, onError, onLoading, task.url]);
+  }, [active, onError, onLoading, task.status, task.url]);
 
   return (
     <webview
@@ -1210,6 +1219,10 @@ function statusLabel(status: DocumentViewStatus) {
   return label[status];
 }
 
+export function isDocumentUrlLocked(status: DocumentViewStatus | undefined) {
+  return status === "running";
+}
+
 function isPassiveWebviewStatusLocked(status: DocumentViewStatus) {
   return status === "running" || status === "success" || status === "error" || status === "stopped";
 }
@@ -1359,6 +1372,23 @@ function normalizeTencentDocsUrl(value: string) {
     return url.toString();
   } catch {
     return "";
+  }
+}
+
+export function shouldLoadConfiguredDocument(currentUrl: string, configuredUrl: string) {
+  const normalizedConfiguredUrl = normalizeTencentDocsUrl(configuredUrl);
+  if (!normalizedConfiguredUrl) {
+    return true;
+  }
+
+  try {
+    const current = new URL(currentUrl);
+    const configured = new URL(normalizedConfiguredUrl);
+    return current.protocol !== configured.protocol ||
+      current.hostname !== configured.hostname ||
+      current.pathname !== configured.pathname;
+  } catch {
+    return true;
   }
 }
 

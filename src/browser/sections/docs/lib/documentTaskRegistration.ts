@@ -153,6 +153,7 @@ function normalizeDocumentTask(value: unknown, index: number): DocumentSubmitTas
 
   const task = value as Partial<DocumentSubmitTask>;
   const fallback = createDefaultDocumentTask(index);
+  const restoredState = normalizeRestoredViewState(task.status);
 
   return {
     ...fallback,
@@ -167,8 +168,8 @@ function normalizeDocumentTask(value: unknown, index: number): DocumentSubmitTas
     pollingIntervalMs: Number.isFinite(task.pollingIntervalMs) ? Number(task.pollingIntervalMs) : fallback.pollingIntervalMs,
     confirmAfterSubmit: typeof task.confirmAfterSubmit === "boolean" ? task.confirmAfterSubmit : fallback.confirmAfterSubmit,
     fillRules: Array.isArray(task.fillRules) && task.fillRules.length ? task.fillRules : fallback.fillRules,
-    status: normalizeViewStatus(task.status),
-    message: typeof task.message === "string" ? task.message : fallback.message,
+    status: restoredState.status,
+    message: restoredState.message ?? (typeof task.message === "string" ? task.message : fallback.message),
     logs: Array.isArray(task.logs) ? task.logs.slice(-80) : [],
     updatedAt: Number.isFinite(task.updatedAt) ? Number(task.updatedAt) : fallback.updatedAt
   };
@@ -195,6 +196,24 @@ function normalizeViewStatus(value: unknown): DocumentViewStatus {
   }
 
   return "idle";
+}
+
+function normalizeRestoredViewState(value: unknown): { status: DocumentViewStatus; message?: string } {
+  if (value === "running") {
+    return {
+      status: "stopped",
+      message: "应用重启后任务已停止，点击开始任务可重新运行"
+    };
+  }
+
+  if (value === "loading") {
+    return {
+      status: "idle",
+      message: "上次网页加载已中断，请重新加载或开始任务"
+    };
+  }
+
+  return { status: normalizeViewStatus(value) };
 }
 
 function documentTaskStatus(status: DocumentViewStatus): GlobalTaskStatus {
