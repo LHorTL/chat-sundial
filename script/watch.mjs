@@ -22,6 +22,7 @@ async function mainWatch(server) {
     VITE_DEV_SERVER_HOST: host,
     VITE_DEV_SERVER_PORT: String(address.port),
   };
+  const remoteDebuggingPort = process.env.ELECTRON_REMOTE_DEBUGGING_PORT || "9233";
 
   return build({
     configFile: "src/main/vite.config.ts",
@@ -31,7 +32,7 @@ async function mainWatch(server) {
         name: "restart-electron",
         writeBundle: () => {
           stopElectron();
-          electronChild = spawn(electron, ["."], {
+          electronChild = spawn(electron, [`--remote-debugging-port=${remoteDebuggingPort}`, "."], {
             detached: false,
             env,
             stdio: "inherit",

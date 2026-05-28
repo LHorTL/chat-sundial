@@ -8,23 +8,29 @@
     "appId": "com.chatsundial.app",
     "productName": "ChatSundial",
     "asar": true,
-    "icon": "build/icon.ico",
+    "icon": "build/icon.png",
     "extraResources": [
       {
         "from": "build/icon.ico",
         "to": "icon.ico"
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
       }
     ],
     "directories": {
       "output": "release/${version}"
     },
     "mac": {
+      "icon": "build/icon.icns",
       "target": [
         "dmg"
       ],
       "artifactName": "${productName}_${version}.${ext}"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -54,7 +60,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fangxinyan/lumina": "^0.6.15",
+    "@fangxinyan/lumina": "^0.6.17",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, shell } from "electron";
 import path from "path";
 
 const { VITE_DEV_SERVER_HOST, VITE_DEV_SERVER_PORT } = process.env;
@@ -6,9 +6,23 @@ const { VITE_DEV_SERVER_HOST, VITE_DEV_SERVER_PORT } = process.env;
 let mainWindow: BrowserWindow | null = null;
 
 function getWindowIconPath() {
+  if (process.platform === "darwin") {
+    return app.isPackaged
+      ? path.join(process.resourcesPath, "icon.png")
+      : path.resolve(process.cwd(), "build/icon.png");
+  }
+
   return app.isPackaged
     ? path.join(process.resourcesPath, "icon.ico")
     : path.resolve(process.cwd(), "build/icon.ico");
+}
+
+function configureDockIcon() {
+  if (process.platform !== "darwin") {
+    return;
+  }
+
+  app.dock?.setIcon(getWindowIconPath());
 }
 
 function createWindow() {
@@ -24,9 +38,12 @@ function createWindow() {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
       preload: path.resolve(__dirname, "./preload.cjs")
     }
   });
+
+  configureWebviewPolicy(mainWindow);
 
   if (app.isPackaged) {
     mainWindow.loadFile(path.resolve(__dirname, "../browser/index.html"));
@@ -35,9 +52,14 @@ function createWindow() {
   }
 
   nativeTheme.themeSource = "light";
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
 }
 
 app.whenReady().then(() => {
+  configureDockIcon();
   createWindow();
 
   app.on("activate", () => {
@@ -119,6 +141,35 @@ function buildNonJsonOneBotMessage(text: string) {
   }
 
   return normalized ? `OneBot 返回了非 JSON 响应：${normalized.slice(0, 120)}` : "OneBot 返回了空响应";
+}
+
+function configureWebviewPolicy(window: BrowserWindow) {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      void shell.openExternal(url);
+    }
+
+    return { action: "deny" };
+  });
+
+  window.webContents.on("will-attach-webview", (_event, webPreferences) => {
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    webPreferences.webSecurity = true;
+    webPreferences.backgroundThrottling = false;
+  });
+
+  window.webContents.on("did-attach-webview", (_event, webContents) => {
+    webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:\/\//i.test(url)) {
+        webContents.loadURL(url).catch(() => shell.openExternal(url));
+      }
+
+      return { action: "deny" };
+    });
+  });
 }
 
 ipcMain.on("window:minimize", (event) => {

@@ -24,3 +24,33 @@ interface Window {
     };
   };
 }
+
+type WebviewEvent = Event & {
+  url?: string;
+  title?: string;
+  message?: string;
+  errorCode?: number;
+  errorDescription?: string;
+  validatedURL?: string;
+};
+
+type WebviewTagElement = HTMLElement & {
+  src: string;
+  loadURL: (url: string) => Promise<void> | void;
+  reload: () => void;
+  stop: () => void;
+  executeJavaScript: (code: string, userGesture?: boolean) => Promise<unknown>;
+  openDevTools: () => void;
+  getURL: () => string;
+};
+
+declare namespace JSX {
+  interface IntrinsicElements {
+    webview: React.DetailedHTMLProps<React.HTMLAttributes<WebviewTagElement>, WebviewTagElement> & {
+      src?: string;
+      partition?: string;
+      webpreferences?: string;
+      allowpopups?: string;
+    };
+  }
+}
