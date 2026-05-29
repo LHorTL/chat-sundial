@@ -7,10 +7,10 @@ import {
   TitleBar,
   Typography
 } from "@fangxinyan/lumina";
-import { AppSidebar } from "./components/AppSidebar";
-import { DocumentTaskNavLabel, NavLabel, SidebarDivider } from "./components/AppSidebarItems";
-import { AppStatusBar } from "./components/AppStatusBar";
-import { TaskCenter } from "./components/TaskCenter";
+import { AppSidebar } from "./components/app-shell/Sidebar";
+import { DocumentTaskNavLabel, NavLabel, SidebarDivider } from "./components/app-shell/SidebarItems";
+import { AppStatusBar } from "./components/app-shell/StatusBar";
+import { TaskCenter } from "./components/task-center/TaskCenter";
 import { useAppNavigation } from "./hooks/useAppNavigation";
 import { useDocumentSidebarTasks } from "./hooks/useDocumentSidebarTasks";
 import { DocumentSubmitPage } from "./sections/docs/pages/DocumentSubmitPage";

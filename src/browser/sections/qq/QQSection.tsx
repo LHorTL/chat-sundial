@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Icon, StatusBar } from "@fangxinyan/lumina";
 import type { GlobalTaskRegistration } from "@/lib/globalTask";
-import { ConfigPage } from "./pages/ConfigPage";
-import { CountdownPage } from "./pages/CountdownPage";
-import { MonitorPage } from "./pages/MonitorPage";
+import { ConfigPage } from "./pages/onebot/ConfigPage";
+import { CountdownPage } from "./pages/countdown/Page";
+import { MonitorPage } from "./pages/monitor/Page";
 import type { SendMessageTarget } from "./lib/onebot";
-import { sendOneBotMessage } from "./lib/onebotClient";
+import { sendOneBotMessage } from "./lib/onebot/client";
 import { eventStatusLabel, oneBotStatusLabel, oneBotStatusTone } from "./lib/qqViewModel";
-import { useCountdownTasks } from "./hooks/useCountdownTasks";
-import { useMonitorRules } from "./hooks/useMonitorRules";
-import { useOneBotConfig } from "./hooks/useOneBotConfig";
-import { useOneBotGroups } from "./hooks/useOneBotGroups";
+import { useCountdownTasks } from "./hooks/countdown/useTasks";
+import { useMonitorRules } from "./hooks/monitor/useRules";
+import { useOneBotConfig } from "./hooks/onebot/useConfig";
+import { useOneBotGroups } from "./hooks/onebot/useGroups";
 import { useQQSidebar } from "./hooks/useQQSidebar";
 
 export type QQPage = "countdown" | "monitor" | "config";

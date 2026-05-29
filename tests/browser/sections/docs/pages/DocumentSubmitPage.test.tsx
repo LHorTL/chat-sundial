@@ -5,7 +5,7 @@ import {
   DOCUMENT_PENDING_LOAD_TIMEOUT_MS,
   isPendingDocumentLoadExpired,
   shouldRequestConfiguredDocumentLoad
-} from "@/sections/docs/lib/documentViewModel";
+} from "@/sections/docs/lib/task/viewModel";
 import { DocumentSubmitPage, isDocumentUrlLocked, shouldLoadConfiguredDocument } from "@/sections/docs/pages/DocumentSubmitPage";
 
 describe("DocumentSubmitPage", () => {

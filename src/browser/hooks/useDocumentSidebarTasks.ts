@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { GlobalTaskRegistration } from "@/lib/globalTask";
-import { buildDocumentTaskRegistration, loadDocumentTasks } from "@/sections/docs/lib/documentTaskRegistration";
-import { toDocumentSidebarTask, type DocumentSidebarTask } from "@/sections/docs/lib/documentViewModel";
+import { buildDocumentTaskRegistration, loadDocumentTasks } from "@/sections/docs/lib/task/registration";
+import { toDocumentSidebarTask, type DocumentSidebarTask } from "@/sections/docs/lib/task/viewModel";
 import type { DocumentTaskAction, DocumentTaskActionRequest } from "@/sections/docs/pages/DocumentSubmitPage";
 
 /** 管理文档侧栏任务、当前任务选择、草稿创建请求和外部任务操作请求。 */

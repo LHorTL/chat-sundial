@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Icon } from "@fangxinyan/lumina";
-import { NavLabel } from "../../../components/AppSidebarItems";
+import { NavLabel } from "../../../components/app-shell/SidebarItems";
 import type { OneBotConnectionStatus } from "../lib/onebot";
 
 interface UseQQSidebarOptions {

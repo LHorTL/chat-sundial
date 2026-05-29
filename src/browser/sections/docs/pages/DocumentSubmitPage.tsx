@@ -1,20 +1,20 @@
 import { useEffect, useRef } from "react";
 import { PageHeading } from "@/components/page";
 import type { GlobalTaskRegistration } from "@/lib/globalTask";
-import { DocumentPreviewPanel } from "../components/DocumentPreviewPanel";
-import { DocumentTaskConfigCard } from "../components/DocumentTaskConfigCard";
-import { useDocumentTaskRunner } from "../hooks/useDocumentTaskRunner";
-import { useDocumentTasks } from "../hooks/useDocumentTasks";
-import { useDocumentWebviews } from "../hooks/useDocumentWebviews";
-import { canUseDocumentWebview } from "../lib/documentWebviewRuntime";
+import { DocumentPreviewPanel } from "../components/preview/Panel";
+import { DocumentTaskConfigCard } from "../components/config/TaskConfigCard";
+import { useDocumentTaskRunner } from "../hooks/task/useRunner";
+import { useDocumentTasks } from "../hooks/task/useTasks";
+import { useDocumentWebviews } from "../hooks/preview/useWebviews";
+import { canUseDocumentWebview } from "../lib/preview/webviewRuntime";
 import {
   getDocumentBlockingNotice,
   isDocumentUrlLocked,
   shouldLoadConfiguredDocument,
   type DocumentSidebarTask
-} from "../lib/documentViewModel";
+} from "../lib/task/viewModel";
 
-export { isDocumentUrlLocked, shouldLoadConfiguredDocument } from "../lib/documentViewModel";
+export { isDocumentUrlLocked, shouldLoadConfiguredDocument } from "../lib/task/viewModel";
 
 interface DocumentSubmitPageProps {
   createRequest?: number;
