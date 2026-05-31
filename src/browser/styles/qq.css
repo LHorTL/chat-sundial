@@ -1,0 +1,46 @@
+.monitor-card-actions,
+.run-mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.run-mode-switch {
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.error-text {
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 0.86rem;
+}
+
+.group-option {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.group-option__name,
+.group-option__id {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-option__name {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.group-option__id {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
