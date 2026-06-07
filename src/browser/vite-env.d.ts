@@ -17,6 +17,22 @@ interface Window {
         rawText?: string;
       }>;
     };
+    snowluma: {
+      status: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaStatus>;
+      logs: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaLogSnapshot>;
+      installLatest: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaActionResult>;
+      installBundled: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaActionResult>;
+      uninstall: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaActionResult>;
+      start: (mode?: import("./sections/qq/lib/snowluma").SnowLumaStartMode) => Promise<import("./sections/qq/lib/snowluma").SnowLumaActionResult>;
+      stop: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaActionResult>;
+      restart: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaActionResult>;
+      listAccounts: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaAccountsResult>;
+      selectAccount: (uin: string) => Promise<import("./sections/qq/lib/snowluma").SnowLumaSelectAccountResult>;
+      openInstallFolder: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaActionResult>;
+      openDownloadUrl: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaActionResult>;
+      openQqDownloadUrl: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaActionResult>;
+      openWebUi: () => Promise<import("./sections/qq/lib/snowluma").SnowLumaActionResult>;
+    };
     window: {
       minimize: () => void;
       maximize: () => void;

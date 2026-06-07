@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import { configureDockIcon } from "./icon";
 import { registerOneBotIpc } from "./onebotIpc";
+import { registerSnowLumaIpc } from "./snowlumaIpc";
 import { createMainWindow } from "./window";
 
 let mainWindow: BrowserWindow | null = null;
@@ -42,6 +43,7 @@ function registerAppIpc() {
 
 registerAppIpc();
 registerOneBotIpc();
+registerSnowLumaIpc();
 
 app.whenReady().then(() => {
   configureDockIcon();

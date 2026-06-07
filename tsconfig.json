@@ -28,6 +28,7 @@
   },
   "include": [
     "src/browser",
+    "src/shared",
     "tests"
   ],
   "references": [

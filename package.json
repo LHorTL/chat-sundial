@@ -17,6 +17,13 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "build/vendor/snowluma",
+        "to": "snowluma",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "directories": {
@@ -53,14 +60,16 @@
     "dev:vite": "vite --config src/browser/vite.config.ts",
     "dev:electron": "electron .",
     "prebuild": "tsc && node script/build.mjs",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
+    "bundle:snowluma": "node script/prepare-snowluma-bundle.mjs",
+    "build": "npm run bundle:snowluma && electron-builder",
+    "build:win": "npm run bundle:snowluma && electron-builder --win",
     "build:mac": "electron-builder --mac",
     "preview": "vite preview --config src/browser/vite.config.ts",
     "test": "vitest run"
   },
   "dependencies": {
     "@fangxinyan/lumina": "^0.6.17",
+    "extract-zip": "^2.0.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

@@ -9,7 +9,7 @@ const { VITE_DEV_SERVER_HOST, VITE_DEV_SERVER_PORT } = process.env;
 export function createMainWindow() {
   const mainWindow = new BrowserWindow({
     width: 1450,
-    height: 770,
+    height: 800,
     minWidth: 920,
     minHeight: 620,
     title: "ChatSundial",

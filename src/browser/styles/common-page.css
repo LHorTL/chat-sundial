@@ -13,7 +13,21 @@
 
 .page-heading {
   flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
   margin: 0 0 16px;
+}
+
+.page-heading__main {
+  min-width: 0;
+}
+
+.page-heading__actions {
+  flex: 0 0 auto;
+  max-width: 460px;
+  padding-top: 2px;
 }
 
 .page-heading h2 {
@@ -133,6 +147,15 @@
 @media (max-width: 700px) {
   body {
     overflow: auto;
+  }
+
+  .page-heading {
+    flex-direction: column;
+  }
+
+  .page-heading__actions {
+    width: 100%;
+    max-width: none;
   }
 
   .page-grid,
