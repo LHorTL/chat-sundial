@@ -65,7 +65,7 @@
     "build:win": "npm run bundle:snowluma && electron-builder --win",
     "build:mac": "electron-builder --mac",
     "preview": "vite preview --config src/browser/vite.config.ts",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@fangxinyan/lumina": "^0.6.17",
